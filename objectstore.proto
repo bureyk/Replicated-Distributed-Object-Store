@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package objectstore;
+
+import "google/protobuf/empty.proto";
+
+// ---------------------------------------------------------------------------
+// Intra-cluster replication
+// ---------------------------------------------------------------------------
+
+enum WriteOpType {
+  PUT    = 0;
+  DELETE = 1;
+  UPDATE = 2;
+  RESET  = 3;
+}
+
+// WriteOp is used only for replication: the primary sends one to each replica
+// via ApplyWrite whenever a client write succeeds.
+message WriteOp {
+  WriteOpType type  = 1;
+  string      key   = 2;
+  bytes       value = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Client-facing request and response messages
+// ---------------------------------------------------------------------------
+
+message PutRequest {
+  string key   = 1;
+  bytes  value = 2;
+}
+
+message GetRequest    { string key = 1; }
+message DeleteRequest { string key = 1; }
+
+message UpdateRequest {
+  string key   = 1;
+  bytes  value = 2;
+}
+
+// A single entry returned by List.
+message ListEntry {
+  string key        = 1;
+  uint64 size_bytes = 2;
+}
+
+// List returns all live objects in a single response message.
+message ListResponse {
+  repeated ListEntry entries = 1;
+}
+
+message GetResponse { bytes value = 1; }
+
+message StatsResponse {
+  uint64 live_objects = 1;  // current number of stored keys
+  uint64 total_bytes  = 2;  // sum of value sizes for all live objects
+  uint64 puts         = 3;  // successful Put calls since startup
+  uint64 gets         = 4;
+  uint64 deletes      = 5;
+  uint64 updates      = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Service definition
+// ---------------------------------------------------------------------------
+
+service ObjectStore {
+  // Client-facing RPCs
+  rpc Put    (PutRequest)            returns (google.protobuf.Empty);
+  rpc Get    (GetRequest)            returns (GetResponse);
+  rpc Delete (DeleteRequest)         returns (google.protobuf.Empty);
+  rpc Update (UpdateRequest)         returns (google.protobuf.Empty);
+  rpc List   (google.protobuf.Empty) returns (ListResponse);
+  rpc Reset  (google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc Stats  (google.protobuf.Empty) returns (StatsResponse);
+
+  // Intra-cluster RPC: primary -> replicas only.
+  // Clients must never call this directly.
+  rpc ApplyWrite (WriteOp)           returns (google.protobuf.Empty);
+}
